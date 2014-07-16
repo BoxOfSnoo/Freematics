@@ -308,7 +308,13 @@ private:
 
 
 /* 
- * DTC Related functions 
+ * DTC Related functions
+ */
+ 
+/* 
+ * queryDTCCount
+ *  send request for number of DTC codes available. Will also return value if MIL ("Check Engine") light is on.
+ *  if number of codes is > 0, then request the actual codes as well.
  */    
     void queryDTCCount()
     {
@@ -327,8 +333,6 @@ private:
 #if LCD_DISPLAY
          int response = strncmp(buffer,"41",2);
          if (response == 0) {
-            lcd.print("OK");
-//            lcd.println(buffer);
 
             // Extract the numver of codes from the string
             memcpy( val3, &buffer[6], 2 );
@@ -337,14 +341,16 @@ private:
             int numCodes = atoi(val3);
             free(val3);
             
-            if (numCodes & 128) { // MIL is on
-              numCodes = numCodes - 128;
+            if (numCodes & 0x80) { // MIL is on
+              numCodes = numCodes - 0x80;
             }
             queryDTCs(numCodes);
             
          } else {
-            lcd.print("No");
-            lcd.println(response);
+            lcd.print("No DTCs");
+
+// Use for debugging at computer
+            queryDTCs(-9);
 
          }
          
@@ -353,23 +359,111 @@ private:
 
     }
 
+/* queryDTCs
+ *  Send request for trouble codes.  Will receive multiple codes in one message.
+ * TODO: only handles first code at the moment.
+ * TODO: refactor
+ *
+ */
    void queryDTCs(int numCodes) {
       char buffer[64];
       write("03\r");  // send OBD request for DTCs
       int bytesReceived = receive(buffer,1000);
-      buffer[bytesReceived+1] = 0;
+      buffer[bytesReceived+1] = '\0';
 
       if (bytesReceived>0) {
          
 #if LCD_DISPLAY
          int response = strncmp(buffer,"43",2);
-         if (response == 0) {
-            lcd.print(buffer);
+         if (response != 0) {
+           
+//            lcd.print(buffer);
 //            lcd.print(strlen(buffer));
+
+            // Debugging code
+            if (numCodes == -9) {
+               const char* buffer = "43 04 41 00 00 00 00";  // Example return for EVAP problem
+               numCodes = 0;
+            }
             
+            char category[2];
+            memcpy( category, &buffer[3], 1 );
+            category[2] = '\0';
+            
+            const char* codeType;
+            switch (atoi(category)) {
+              case 0:
+                codeType = "P0";  // Powertrain
+                break;
+              case 1:
+                codeType = "P1";
+                break;
+              case 2:
+                codeType = "P2";
+                break;
+              case 3:
+                codeType = "P3";
+                break;
+              case 4:
+                codeType = "C1";  // Chassis
+                break;
+              case 5:
+                codeType = "C2";
+                break;
+              case 6:
+                codeType = "C3";
+                break;
+              case 7:
+                codeType = "C4";
+                break;
+              case 8:
+                codeType = "B1";  // Body
+                break;
+              case 9:
+                codeType = "B2";
+                break;
+              case 0xA:
+                codeType = "B3";
+                break;
+              case 0xB:
+                codeType = "B4";
+                break;
+              case 0xC:
+                codeType = "U1"; //Network
+                break;              
+              case 0xD:
+                codeType = "U2";
+                break;              
+              case 0xE:
+                codeType = "U3";
+                break;              
+              case 0xF:
+                codeType = "U4";
+                break;              
+            }
+            
+            free(category);
+            
+            char code[5], fmtCode[5];
+            memcpy( code, &buffer[4], 4 );
+            code[5] = '\0';
+
+            // Remove spaces from the string
+            int i=0, o=0; 
+            while (code[i]!= '\0') {
+              if (code[i]!=' ') fmtCode[o++]=code[i];
+              i++;
+            }
+            fmtCode[o] = '\0';
+            
+            lcd.print("1/");
+            lcd.print(numCodes);
+            lcd.print(":");
+            lcd.print(codeType);
+            lcd.print(fmtCode);
             
          } else {
-            lcd.print("No");
+            lcd.print("No DTC codes");  // Should never reach here
             lcd.println(buffer);
          
          }
