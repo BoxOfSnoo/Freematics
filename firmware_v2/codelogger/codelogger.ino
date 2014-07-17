@@ -350,7 +350,7 @@ private:
             lcd.print("No DTCs");
 
 // Use for debugging at computer
-            queryDTCs(-9);
+//            queryDTCs(-9);
 
          }
          
@@ -361,8 +361,7 @@ private:
 
 /* queryDTCs
  *  Send request for trouble codes.  Will receive multiple codes in one message.
- * TODO: only handles first code at the moment.
- * TODO: refactor
+ * TODO: refactor switch
  *
  */
    void queryDTCs(int numCodes) {
@@ -375,92 +374,109 @@ private:
          
 #if LCD_DISPLAY
          int response = strncmp(buffer,"43",2);
-         if (response != 0) {
+         if (response == 0) {
            
 //            lcd.print(buffer);
 //            lcd.print(strlen(buffer));
 
             // Debugging code
             if (numCodes == -9) {
-               const char* buffer = "43 04 41 00 00 00 00";  // Example return for EVAP problem
-               numCodes = 0;
+               char buffer[] = "43 04 41 00 00 00 00\n43 01 33 00 00 00 00\n";  // Example return for 2 codes
+               numCodes = 2;
             }
             
-            char category[2];
-            memcpy( category, &buffer[3], 1 );
-            category[2] = '\0';
-            
-            const char* codeType;
-            switch (atoi(category)) {
-              case 0:
-                codeType = "P0";  // Powertrain
-                break;
-              case 1:
-                codeType = "P1";
-                break;
-              case 2:
-                codeType = "P2";
-                break;
-              case 3:
-                codeType = "P3";
-                break;
-              case 4:
-                codeType = "C1";  // Chassis
-                break;
-              case 5:
-                codeType = "C2";
-                break;
-              case 6:
-                codeType = "C3";
-                break;
-              case 7:
-                codeType = "C4";
-                break;
-              case 8:
-                codeType = "B1";  // Body
-                break;
-              case 9:
-                codeType = "B2";
-                break;
-              case 0xA:
-                codeType = "B3";
-                break;
-              case 0xB:
-                codeType = "B4";
-                break;
-              case 0xC:
-                codeType = "U1"; //Network
-                break;              
-              case 0xD:
-                codeType = "U2";
-                break;              
-              case 0xE:
-                codeType = "U3";
-                break;              
-              case 0xF:
-                codeType = "U4";
-                break;              
-            }
-            
-            free(category);
-            
-            char code[5], fmtCode[5];
-            memcpy( code, &buffer[4], 4 );
-            code[5] = '\0';
-
+            int i=0, o=0;
+            char response[64];
             // Remove spaces from the string
-            int i=0, o=0; 
-            while (code[i]!= '\0') {
-              if (code[i]!=' ') fmtCode[o++]=code[i];
+            while (buffer[i]!= '\0') {
+              if (buffer[i]!=' ') response[o++]=buffer[i];
               i++;
             }
-            fmtCode[o] = '\0';
-            
-            lcd.print("1/");
-            lcd.print(numCodes);
-            lcd.print(":");
-            lcd.print(codeType);
-            lcd.print(fmtCode);
+            response[o] = '\0';
+
+            char oneCode[14];
+            char category[2];
+            const char* codeType;
+            char code[4];  // Actual trouble code
+
+            // Loop through each code
+            for (int codeCount=1; codeCount<=numCodes; codeCount++) {
+
+               // Grab one chunk of codes at a time
+               memcpy( oneCode, &response[15*(codeCount-1)], 14 );
+               oneCode[14] = NULL;               
+
+               memcpy( category, &oneCode[2], 1 );
+               category[2] = '\0';
+               
+               switch (atoi(category)) {
+                 case 0:
+                   codeType = "P0";  // Powertrain
+                   break;
+                 case 1:
+                   codeType = "P1";
+                   break;
+                 case 2:
+                   codeType = "P2";
+                   break;
+                 case 3:
+                   codeType = "P3";
+                   break;
+                 case 4:
+                   codeType = "C0";  // Chassis
+                   break;
+                 case 5:
+                   codeType = "C1";
+                   break;
+                 case 6:
+                   codeType = "C2";
+                   break;
+                 case 7:
+                   codeType = "C3";
+                   break;
+                 case 8:
+                   codeType = "B0";  // Body
+                   break;
+                 case 9:
+                   codeType = "B1";
+                   break;
+                 case 0xA:
+                   codeType = "B2";
+                   break;
+                 case 0xB:
+                   codeType = "B3";
+                   break;
+                 case 0xC:
+                   codeType = "U0"; //Network
+                   break;              
+                 case 0xD:
+                   codeType = "U1";
+                   break;              
+                 case 0xE:
+                   codeType = "U2";
+                   break;              
+                 case 0xF:
+                   codeType = "U3";
+                   break;              
+               }
+               
+               free(category);
+               
+               memcpy( code, &oneCode[3], 3 );
+
+               lcd.setCursor(0,(codeCount-1)); // next line down for each code
+               
+               lcd.print(codeCount);
+               lcd.print("/");
+               lcd.print(numCodes);
+               lcd.print(":");
+               lcd.print(codeType);
+               lcd.print(code);
+
+               free(code);
+            }
+
+            free(oneCode);
             
          } else {
             lcd.print("No DTC codes");  // Should never reach here
