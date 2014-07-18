@@ -324,11 +324,12 @@ private:
       int bytesReceived = receive(buffer,1000);
       buffer[bytesReceived+1] = 0;
 
-//lcd.print(bytesReceived);
       if (bytesReceived>0) {
 
-         // Response should be "41 01 xx yy yy yy"
+         // Response should be "41 01 xx yy yy yy yy"
          // looking for the value in xx
+
+         //const char *buffer = "41 01 81 00 00 00 00";  // to debug
 
 #if LCD_DISPLAY
          int response = strncmp(buffer,"41",2);
@@ -337,12 +338,13 @@ private:
             // Extract the numver of codes from the string
             memcpy( val3, &buffer[6], 2 );
             val3[2] = '\0';
-            
-            int numCodes = atoi(val3);
+
+            int numCodes = strtol(val3,NULL,16);  // Convert hex string to decimal
+
             free(val3);
-            
-            if (numCodes & 0x80) { // MIL is on
-              numCodes = numCodes - 0x80;
+          
+            if ((numCodes & 128)>0) { // MIL is on
+              numCodes = numCodes - 128;
             }
             queryDTCs(numCodes);
             
@@ -361,10 +363,10 @@ private:
 
 /* queryDTCs
  *  Send request for trouble codes.  Will receive multiple codes in one message.
- * TODO: refactor switch
  *
  */
-   void queryDTCs(int numCodes) {
+   void queryDTCs(int numCodes) 
+   {
       char buffer[64];
       write("03\r");  // send OBD request for DTCs
       int bytesReceived = receive(buffer,1000);
@@ -396,7 +398,8 @@ private:
 
             char oneCode[14];
             char category[2];
-            const char* codeType;
+            char codeType[3];
+            char codeTypes[5] = "PCBU";
             char code[4];  // Actual trouble code
 
             // Loop through each code
@@ -404,65 +407,17 @@ private:
 
                // Grab one chunk of codes at a time
                memcpy( oneCode, &response[15*(codeCount-1)], 14 );
-               oneCode[14] = NULL;               
+               oneCode[14] = '\0';               
 
                memcpy( category, &oneCode[2], 1 );
                category[2] = '\0';
-               
-               switch (atoi(category)) {
-                 case 0:
-                   codeType = "P0";  // Powertrain
-                   break;
-                 case 1:
-                   codeType = "P1";
-                   break;
-                 case 2:
-                   codeType = "P2";
-                   break;
-                 case 3:
-                   codeType = "P3";
-                   break;
-                 case 4:
-                   codeType = "C0";  // Chassis
-                   break;
-                 case 5:
-                   codeType = "C1";
-                   break;
-                 case 6:
-                   codeType = "C2";
-                   break;
-                 case 7:
-                   codeType = "C3";
-                   break;
-                 case 8:
-                   codeType = "B0";  // Body
-                   break;
-                 case 9:
-                   codeType = "B1";
-                   break;
-                 case 0xA:
-                   codeType = "B2";
-                   break;
-                 case 0xB:
-                   codeType = "B3";
-                   break;
-                 case 0xC:
-                   codeType = "U0"; //Network
-                   break;              
-                 case 0xD:
-                   codeType = "U1";
-                   break;              
-                 case 0xE:
-                   codeType = "U2";
-                   break;              
-                 case 0xF:
-                   codeType = "U3";
-                   break;              
-               }
-               
+               int numCategory = strtol(category, NULL, 16);
                free(category);
                
+               int n = sprintf(codeType, "%c%d", codeTypes[(numCategory/4)], (numCategory%4));
+               
                memcpy( code, &oneCode[3], 3 );
+               code[3] = '\0';
 
                lcd.setCursor(0,(codeCount-1)); // next line down for each code
                
