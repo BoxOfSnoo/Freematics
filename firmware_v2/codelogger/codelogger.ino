@@ -53,7 +53,7 @@ SoftwareSerial SerialInfo(A2, A3); /* for BLE Shield on UNO/leonardo*/
 #define PMTK_SET_NMEA_UPDATE_10HZ "$PMTK220,100*2F\r"
 
 #if USE_GPS && LOG_GPS_PARSED_DATA
-TinyGPS gps;
+  TinyGPS gps;
 #endif
 
 static uint16_t lastFileSize = 0;
@@ -72,6 +72,7 @@ public:
     void setup()
     {
         state = 0;
+        
 #if USE_ACCEL
         Wire.begin();
         if (MPU6050_init() == 0) {
@@ -94,8 +95,7 @@ public:
 
         showStates();
         //showECUCap();
-        queryDTCCount();
-        
+        //queryDTCCount();
     }
 #if USE_GPS
     void logGPSData()
@@ -285,6 +285,60 @@ public:
         }
     }
 #endif
+
+
+/* 
+ * queryDTCCount
+ *  send request for number of DTC codes available. Will also return value if MIL ("Check Engine") light is on.
+ *  if number of codes is > 0, then request the actual codes as well.
+ */    
+    void queryDTCCount()
+    {
+      char buffer[64];
+      char val3[3];
+      write("01 01\r");  // send OBD request for DTCs
+      int bytesReceived = receive(buffer,1000);
+      buffer[bytesReceived+1] = 0;
+
+      if (bytesReceived>0) {
+
+         // Response should be "41 01 xx yy yy yy yy"
+         // looking for the value in xx
+
+         //const char *buffer = "41 01 81 00 00 00 00";  // to debug
+
+         int response = strncmp(buffer,"41",2);
+         if (response == 0) {
+
+            // Extract the numver of codes from the string
+            memcpy( val3, &buffer[6], 2 );
+            val3[2] = '\0';
+
+            int numCodes = strtol(val3,NULL,16);  // Convert hex string to decimal
+
+            free(val3);
+          
+            if ((numCodes & 128)>0) { // MIL is on
+              numCodes = numCodes - 128;
+            }
+            queryDTCs(numCodes);
+            
+         } else {
+
+#if LCD_DISPLAY
+           lcd.print("No DTCs");
+#endif
+// Use for debugging at computer
+//            queryDTCs(-9);
+
+         }
+         
+      }
+
+    }
+
+
+
     byte state;
 private:
     void queryOBDData(byte pid)
@@ -307,62 +361,10 @@ private:
     }
 
 
-/* 
- * DTC Related functions
- */
- 
-/* 
- * queryDTCCount
- *  send request for number of DTC codes available. Will also return value if MIL ("Check Engine") light is on.
- *  if number of codes is > 0, then request the actual codes as well.
- */    
-    void queryDTCCount()
-    {
-      char buffer[64];
-      char val3[3];
-      write("01 01\r");  // send OBD request for DTCs
-      int bytesReceived = receive(buffer,1000);
-      buffer[bytesReceived+1] = 0;
-
-      if (bytesReceived>0) {
-
-         // Response should be "41 01 xx yy yy yy yy"
-         // looking for the value in xx
-
-         //const char *buffer = "41 01 81 00 00 00 00";  // to debug
-
-#if LCD_DISPLAY
-         int response = strncmp(buffer,"41",2);
-         if (response == 0) {
-
-            // Extract the numver of codes from the string
-            memcpy( val3, &buffer[6], 2 );
-            val3[2] = '\0';
-
-            int numCodes = strtol(val3,NULL,16);  // Convert hex string to decimal
-
-            free(val3);
-          
-            if ((numCodes & 128)>0) { // MIL is on
-              numCodes = numCodes - 128;
-            }
-            queryDTCs(numCodes);
-            
-         } else {
-            lcd.print("No DTCs");
-
-// Use for debugging at computer
-//            queryDTCs(-9);
-
-         }
-         
-#endif
-      }
-
-    }
-
 /* queryDTCs
  *  Send request for trouble codes.  Will receive multiple codes in one message.
+ *
+ * Called by public queryDTCCount procedure
  *
  */
    void queryDTCs(int numCodes) 
@@ -374,18 +376,19 @@ private:
 
       if (bytesReceived>0) {
          
-#if LCD_DISPLAY
          int response = strncmp(buffer,"43",2);
-         if (response == 0) {
+         if (response == 0) {  // != 0 for debugging
            
-//            lcd.print(buffer);
-//            lcd.print(strlen(buffer));
-
             // Debugging code
             if (numCodes == -9) {
-               char buffer[] = "43 04 41 00 00 00 00\n43 01 33 00 00 00 00\n";  // Example return for 2 codes
+               char buffer[] = "43 04 41 00 00 00 00\r43 01 33 00 00 00 00\r";  // Example return for 2 codes
                numCodes = 2;
             }
+
+#if ENABLE_DATA_LOG
+            sdfile.println("DTC Response");
+            sdfile.println(buffer);
+#endif
             
             int i=0, o=0;
             char response[64];
@@ -401,6 +404,7 @@ private:
             char codeType[3];
             char codeTypes[5] = "PCBU";
             char code[4];  // Actual trouble code
+            char codeOutput[10]; // formatted output
 
             // Loop through each code
             for (int codeCount=1; codeCount<=numCodes; codeCount++) {
@@ -419,25 +423,35 @@ private:
                memcpy( code, &oneCode[3], 3 );
                code[3] = '\0';
 
-               lcd.setCursor(0,(codeCount-1)); // next line down for each code
-               
-               lcd.print(codeCount);
-               lcd.print("/");
-               lcd.print(numCodes);
-               lcd.print(":");
-               lcd.print(codeType);
-               lcd.print(code);
+               n = sprintf(codeOutput, "%d/%d:%s%s", codeCount, numCodes, codeType, code);
 
-               free(code);
+#if LCD_DISPLAY
+               lcd.setCursor(0,(codeCount-1)); // next line down for each code
+               lcd.print(codeOutput);
+#endif               
+
+#if ENABLE_DATA_LOG
+            sdfile.println(codeOutput);
+#endif
+
+              delay(20);
+              
+               //free(code);
             }
 
-            free(oneCode);
+            //free(oneCode);
             
          } else {
-            lcd.print("No DTC codes");  // Should never reach here
-            lcd.println(buffer);
-         
+#if LCD_DISPLAY
+           lcd.print("No DTC codes");  // Should never reach here
+           lcd.println(buffer);
+#endif         
          }
+
+#if ENABLE_DATA_LOG
+        if (state & STATE_SD_READY) {
+          flushFile();
+        }
 #endif
       }     
    }
@@ -539,6 +553,14 @@ void loop()
         logger.logGPSData();
     }
 #endif
+
+#if MONITOR_DTC
+  // Run DTC task every DTC_INTERVAL (allow for 2s between checks)
+  if ((t%DTC_INTERVAL)<=2000) {
+    logger.queryDTCCount();
+  }
+#endif
+
 #if ENABLE_DATA_LOG
     logger.flushData();
 #endif

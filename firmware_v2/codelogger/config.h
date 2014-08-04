@@ -32,6 +32,12 @@
 #define LCD_ADDRESS 0x27
 
 
+// enable(1) or disable(0) DTC checking per loop
+#define MONITOR_DTC 1
+
+// Interval to poll for DTCs in ms (300000 = 5 minutes)
+#define DTC_INTERVAL 300000
+
 /**************************************
 * Choose SD pin here
 **************************************/
